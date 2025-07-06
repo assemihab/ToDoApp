@@ -247,8 +247,9 @@ async function sortTodos(statusbox) {
     completedlist.innerHTML = "";
     itemstatus = "completed";
   }
+  let todos =[];
   try {
-    let todos = Array.from(todomemory).filter(
+     todos = Array.from(todomemory).filter(
       (item) => item.status === itemstatus
     );
   } catch (error) {

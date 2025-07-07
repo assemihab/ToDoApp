@@ -2,6 +2,7 @@
 // 1. error handling
 // 2.rxjs
 // 3. refactor the code
+
 var admin = require("firebase-admin");
 const express = require("express");
 const cors = require("cors");
@@ -156,23 +157,40 @@ async function deleteObject(documentID) {
     throw error;
   }
 }
-async function updateObject(objectID, newStatus) {
+async function updateObject(objectID, newStatus, fieldPaths = "status") {
   const token = await getAccessToken();
-  const url = `https://firestore.googleapis.com/v1beta1/projects/todo-ab144/databases/(default)/documents/todos/${objectID}?updateMask.fieldPaths=status`;
+  const url = `https://firestore.googleapis.com/v1beta1/projects/todo-ab144/databases/(default)/documents/todos/${objectID}?updateMask.fieldPaths=${fieldPaths}`;
   //note for assem if the object does not exist, the response will still be ok and the data will inserted
+  let response;
   try {
-    const response = await fetch(url, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        fields: {
-          status: { stringValue: newStatus },
+    if (fieldPaths == "status") {
+      response = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
-      }),
-    });
+        body: JSON.stringify({
+          fields: {
+            status: { stringValue: newStatus },
+          },
+        }),
+      });
+    } else {
+      response = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fields: { priority: { integerValue: parseInt(newStatus) } },
+        }),
+      });
+    }
+
+    //note for assem: if the object does not exist, the response will still be ok and the data will be inserted
+
     const data = await response.json();
     console.log("Firestore REST API response:", data);
     if (!response.ok) {
@@ -238,3 +256,35 @@ app.listen(3000, () => {
 // getMultipleObjects();
 // getAllObjects();
 // deleteObject("20");
+
+//test rxjs
+
+// const url = "https://jsonplaceholder.typicode.com/todos/1";
+const updateurl = `https://firestore.googleapis.com/v1beta1/projects/todo-ab144/databases/(default)/documents/todos`;
+const { from, map } = require("rxjs");
+const { switchMap, filter } = require("rxjs/operators");
+const observable$ = from(fetch(updateurl)).pipe(
+  switchMap((res) => res.json()),
+  map((json) => json.documents || []),
+  map((docs) =>
+    docs.filter((doc) => {
+      const createdAt = new Date(doc.createTime);
+      const cutoff = new Date(Date.now() - 1 * 60 * 1000);
+      return createdAt < cutoff;
+    })
+  ),
+  map((docs) =>
+    docs.filter((doc) => doc.fields?.status?.stringValue === "pending")
+  ),
+  map((docs) => docs.map((doc) => doc.name)),
+  map((docs) => docs.map((doc) => doc.split("/").pop()))
+);
+observable$.subscribe({
+  next: (ids) => {
+    console.log("Documents:", ids);
+    ids.forEach((id) => {
+      updateObject(id, "1", "priority");
+    });
+  },
+  error: (err) => console.error("Error:", err),
+});
